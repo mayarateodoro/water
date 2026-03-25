@@ -1,5 +1,5 @@
 #01_CONFIGURACAO
-raiz_projeto <- "H:/ano_prodes" #muda o caminho
+raiz_projeto <- "H:/seco_24" #muda o caminho
 nome_ecorregiao <- "planalto.central" #muda a eco
 caminho_completo <- file.path(raiz_projeto, nome_ecorregiao)
 if (!dir.exists(caminho_completo)) {
