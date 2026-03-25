@@ -1,0 +1,305 @@
+#01_CONFIGURACAO
+raiz_projeto <- "H:/ano_prodes" #muda o caminho
+nome_ecorregiao <- "planalto.central" #muda a eco
+caminho_completo <- file.path(raiz_projeto, nome_ecorregiao)
+if (!dir.exists(caminho_completo)) {
+  usethis::create_package(caminho_completo, open = FALSE)
+}
+sub_dirs <- c(
+  "dados_brutos/vetores",
+  "dados_brutos/cubos",
+  "dados_derivados/indices",
+  "dados_derivados/mlme",
+  "dados_derivados/som",
+  "modelos",
+  "resultados/probabilidades",
+  "resultados/mapas",
+  "resultados/incerteza",
+  "scripts/cube",
+  "scripts/mlme",
+  "sripts/indices",
+  "sripts/amostras",
+  "sripts/som",
+  "sripts/treinamento",
+  "sripts/classificacao",
+  "sripts/smooth",
+  "sripts/mosaico",
+  "logs"
+)
+lapply(file.path(caminho_completo, sub_dirs), dir.create, recursive = TRUE, showWarnings = FALSE)
+library(rstudioapi)
+rstudioapi::openProject(caminho_completo)
+
+#02_PACOTES
+library(tibble)
+library(sits)
+library(sf)
+library(terra)
+library(raster)
+library(torch)
+library(luz)
+
+# SEMENTE
+set.seed(26101985)
+
+#03_CUBO2024
+ecot<-sf::st_read("dados_brutos/vetores/eco_cerrado.shp") #leitura dos tiles
+tile<-subset(ecot,name==c("planalto.central"))#aqui coloca o nome da ecorregião, igual está na coluna 'Name' do gpkg. (se deixar subset ecot ele faz pro bioma todo)
+cube_tiles <- tile$tile
+cube2024 <- sits_cube(
+  source = "BDC",
+  collection = "SENTINEL-2-16D",
+  bands = c("B02","B03","B04","B05","B06","B07","B08","B8A","B11","B12","CLOUD","NDVI"),
+  tiles = cube_tiles,
+  start_date = "2024-05-01",
+  end_date = "2024-08-31"
+)
+
+#04_INDICIES2024
+cube2024 <- sits_apply(cube2024,
+                       MNDWI = ((B03 - B11) / (B03 + B11)),
+                       normalized = FALSE,
+                       progress= TRUE,
+                       output_dir = 'dados_derivados/indices'
+)
+plot(cube2024, band = "MNDWI", palette = "Blues")
+
+cube2024 <- sits_apply(cube2024,
+                       SAVI = ((B08 - B04) / (B08 + B04 + 0.50)) * (1 + 0.50),
+                       normalized = FALSE,
+                       progress= TRUE,
+                       output_dir = 'dados_derivados/indices'
+)
+plot(cube2024, band = "SAVI", palette = "Reds")
+
+#05_MLME
+em <- tibble::tribble(
+  ~class, ~B02, ~B03, ~B04, ~B8A, ~B11, ~B12,
+  "forest", 200,352,189,2800,1340,546,
+  "soil", 400,650,700,3600,3500,1800,
+  "water",700,1100,1400,850,40,26
+)
+MLME2024 <- sits_mixture_model(cube2024, endmembers = em, multicores = 4, memsize = 12,
+                               output_dir= "dados_derivados/mlme")
+
+#06_MERGE
+merge2024 <- sits_merge(cube2024, MLME2024)
+
+
+
+#07_AMOSTRAS2024
+samples_dir <- st_read("dados_brutos/vetores/amostras_planalto_central_20260224.gpkg") #local das amostras
+samples_time_series <- sits_get_data(merge2024, samples_dir)
+samples_bal <- sits_reduce_imbalance(samples_time_series, n_samples_over=150, n_samples_under=300)
+
+sits_labels(samples_time_series)<- c("agua", "outros") #Sempre visualizar primeiro quantas classes tem, antes de informar a legenda
+
+#08_SOM
+som_cluster <- sits_som_map(samples_bal, grid_xdim=9, grid_ydim=9, alpha=1, distance="dtw", rlen=20)
+plot(som_cluster, legend=c(agua="blue", outros="pink"))
+som_eval <- sits_som_evaluate_cluster(som_cluster)
+plot(som_eval, legend=c(agua="blue", outros="pink"))
+
+all_samples <- sits_som_clean_samples(
+  som_map = som_cluster,
+  prior_threshold = 0.6,
+  posterior_threshold = 0.6,
+  keep = c("clean", "analyze", "remove"))
+plot(all_samples)
+
+new_samples2024 <- sits_som_clean_samples(
+  som_map = som_cluster,
+  prior_threshold = 0.6,
+  posterior_threshold = 0.6,
+  keep = c("clean", "analyze"))
+summary(new_samples2024)
+
+new_som_cluster2024 <- sits_som_map(new_samples2024, grid_xdim=9, grid_ydim=9, alpha=1, distance="dtw", rlen=20)
+plot(new_som_cluster2024, legend=c(agua="blue", outros="pink"))
+new_som_eval2024 <- sits_som_evaluate_cluster(new_som_cluster2024)
+plot(new_som_eval2024, legend=c(agua="blue", outros="pink"))
+
+
+#09_TREINAMENTO
+set.seed(26101985)
+rf_model2024_seco <- sits_train(new_samples2024, sits_rfor())
+
+saveRDS(rf_model2024,"resultados/rf_model2024_seco.tif")
+
+
+#10_CUBO2022
+ecot<-sf::st_read("dados_brutos/vetores/eco_cerrado.shp") #leitura dos tiles
+tile<-subset(ecot,name==c("planalto.central"))#aqui coloca o nome da ecorregião, igual está na coluna 'Name' do gpkg.
+cube_tiles <- tile$tile
+cube2022 <- sits_cube(
+  source = "BDC",
+  collection = "SENTINEL-2-16D",
+  bands = c("B02","B03","B04","B05","B06","B07","B08","B8A","B11","B12","CLOUD","NDVI"),
+  tiles = cube_tiles,
+  start_date = "2022-05-01",
+  end_date = "2022-08-31"
+)
+
+#11_INDICIES2022
+cube2022 <- sits_apply(cube2022,
+                       MNDWI = ((B03 - B11) / (B03 + B11)),
+                       normalized = FALSE,
+                       progress= TRUE,
+                       output_dir = 'dados_derivados/indices'
+)
+plot(cube2022, band = "MNDWI", palette = "Blues")
+
+cube2022 <- sits_apply(cube2022,
+                       SAVI = ((B08 - B04) / (B08 + B04 + 0.50)) * (1 + 0.50),
+                       normalized = FALSE,
+                       progress= TRUE,
+                       output_dir = 'dados_derivados/indices'
+)
+plot(cube2022, band = "SAVI", palette = "Reds")
+
+#12_MLME
+em <- tibble::tribble(
+  ~class, ~B02, ~B03, ~B04, ~B8A, ~B11, ~B12,
+  "forest", 200,352,189,2800,1340,546,
+  "soil", 400,650,700,3600,3500,1800,
+  "water",700,1100,1400,850,40,26
+)
+MLME2022 <- sits_mixture_model(cube2022, endmembers = em, multicores = 4, memsize = 12,
+                               output_dir= "dados_derivados/mlme")
+
+#13_MERGE
+merge2022 <- sits_merge(cube2022, MLME2022)
+
+#14_CLASSIFICACAO2022
+eco_probs22  <- sits_classify(merge2022, rf_model2024_seco, multicores=4, memsize=12,
+                              output_dir= "resultados/probabilidades")
+eco_smooth22 <- sits_smooth(eco_probs22, multicores=4, memsize=12,
+                            output_dir= "resultados/probabilidades")
+eco_map22 <- sits_label_classification(eco_smooth22, output_dir= "resultados/mapas")
+plot(eco_map22)
+
+
+#15 INCERTEZA
+eco_map_uncert <- sits_uncertainty(
+  cube = eco_smooth22,
+  type = "margin",
+  output_dir = 'resultados/incerteza',
+  memsize = 2,       # 🔥
+  multicores = 2,    # 🔥
+  progress = TRUE
+)
+
+rasters_list <- lapply(eco_map_uncert, rast)
+
+plot(eco_map_uncert)
+
+list.files ('resultados/incerteza')
+
+#16 MOSAICO
+map_uncert_mosaic <-sits_mosaic(
+  cube = eco_map_uncert,
+  output_dir = 'resultados/incerteza',
+  #crs = "EPSG:3857", # Sistema de referência opcional
+  #roi = região_de_interesse, # Opcional: corta o mosaico para uma área específica
+  multicores = 2 # Número de núcleos para processamento paralelo
+)
+rast_uncert = rast('resultados/incerteza/SENTINEL-2_MSI_MOSAIC_2022-04-23_2022-08-29_margin_v1.tif')
+
+map_class_mosaic <- sits_mosaic(
+  cube = eco_map22,
+  output_dir = "resultados/mapas",
+  #crs = "EPSG:3857", # Sistema de referência opcional
+  #roi = região_de_interesse, # Opcional: corta o mosaico para uma área específica
+  multicores = 2 # Número de núcleos para processamento paralelo
+)
+rast_class = rast('resultados/mapas/SENTINEL-2_MSI_MOSAIC_2022-04-23_2022-08-29_class_v1.tif')
+
+#17 CONFIANÇA
+uncert_norm <- rast_uncert / 10000
+conf_map <- 1 - uncert_norm
+plot(conf_map)
+
+writeRaster(conf_map, 'resultados/incerteza/conf_map.tif', overwrite = TRUE)
+rast_conf = rast('resultados/incerteza/conf_map.tif')
+
+agua_confiavel <- (rast_class == 1) & (rast_conf > 0.7)
+agua_confiavel <- classify(agua_confiavel, rcl=matrix(c(0,NA,1,1),ncol=2,byrow=TRUE))
+
+writeRaster(agua_confiavel,'resultados/mapas/agua_alta_confianca.tif', overwrite=TRUE)
+plot(agua_confiavel, col="blue", main="Água com Confiança > 0.7")
+
+#18 ESTATÍSTICA
+# 1. Carregar os dados
+r <- rast('resultados/mapas/agua_alta_confianca.tif')
+gpkg_ref <- vect("dados_brutos/vetores/hidrografia_planalto_central.gpkg")
+
+# 2. Tratar NAs como 0
+r[is.na(r)] <- 0
+
+# 3. Alinhar o CRS
+if (crs(r) != crs(gpkg_ref)) {
+  cat("Alinhando sistemas de coordenadas... Aguarde.\n")
+  gpkg_ref <- project(gpkg_ref, crs(r))
+}
+
+# 4. CÁLCULO DAS ÁREAS TOTAIS 
+
+res_pixel <- res(r)[1] * res(r)[2]
+
+# Área do Raster (Mapeada)
+pixels_agua <- global(r, "sum", na.rm = TRUE)$sum
+area_raster_ha <- (pixels_agua * res_pixel) / 10000
+
+# Área do GeoPackage (Referência)
+area_gpkg_ha <- sum(expanse(gpkg_ref)) / 10000
+
+# 5. Cálculo de omissão (HIDROGRAFIA - MAPA) 
+
+cat("\nCalculando erros de Omissão...\n")
+gpkg_rasterizado <- rasterize(gpkg_ref, r, field = 1, background = 0)
+
+# Omissão: O que a referência tem (1) e você não pegou (0)
+omissao_raster <- gpkg_rasterizado - r
+omissao_raster[omissao_raster <= 0] <- NA
+
+pixels_erro_omissao <- global(omissao_raster, "sum", na.rm = TRUE)$sum
+area_omissao_ha <- (pixels_erro_omissao * res_pixel) / 10000
+
+# 6. Cálculo das estatísticas de acurácia 
+
+# Área de Acerto (O que ambos concordam que é água)
+# Hidrografia Total - O que você não pegou = O que você acertou
+area_acerto_ha <- area_gpkg_ha - area_omissao_ha
+
+# Área de Comissão (O que você mapeou mas não está no oficial)
+area_comissao_ha <- area_raster_ha - area_acerto_ha
+
+# Cálculos de Porcentagem
+p_acerto   <- (area_acerto_ha / area_gpkg_ha) * 100
+p_omissao  <- (area_omissao_ha / area_gpkg_ha) * 100
+p_comissao <- (area_comissao_ha / area_raster_ha) * 100
+
+# 7. Resultados
+
+cat("\n--- ESTATÍSTICAS DE ÁREA (HA) ---\n")
+cat("Área Hidrografia (Ref):", round(area_gpkg_ha, 2), "ha\n")
+cat("Área Mapeada (Raster): ", round(area_raster_ha, 2), "ha\n")
+cat("Acerto Real:           ", round(area_acerto_ha, 2), "ha\n")
+cat("Erro de Omissão:       ", round(area_omissao_ha, 2), "ha\n")
+cat("Erro de Comissão:      ", round(area_comissao_ha, 2), "ha\n")
+
+cat("\n========= RELATÓRIO DE ACURÁCIA (%) =========\n")
+cat("Exatidão do Produtor (Acerto): ", round(p_acerto, 2), "%\n")
+cat("Erro de Omissão (Não detectado):", round(p_omissao, 2), "%\n")
+cat("Erro de Comissão (Falsos/Novos):", round(p_comissao, 2), "%\n")
+cat("==============================================\n")
+
+# 8. Salva o projeto
+
+cat("\nGerando polígono de omissão para conferência no QGIS...\n")
+omissao_pol <- as.polygons(omissao_raster, dissolve = TRUE)
+writeVector(omissao_pol, "D:/teste_R_planalto_area/erros_de_omissao.gpkg", overwrite = TRUE)
+
+cat("Processo finalizado com sucesso!\n")
+
+
