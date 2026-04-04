@@ -2,7 +2,7 @@
 
 ## Descrição do Projeto
 
-Este repositório contém um script automatizado em **R** para mapeamento de recursos hídricos na ecorregião do **Planalto Central**, no bioma Cerrado, usando imagens **Sentinel-2** e o pacote **SITS** (Satellite Image Time Series). 
+Este repositório contém um script automatizado em **R** para mapeamento de recursos hídricos na ecorregião do **Planalto Central**, no bioma Cerrado, usando imagens **Sentinel-2** e o pacote **SITS** (Satellite Image Time Series). Este experimento foi realizado pela equipe de desenvolvimento do projeto BiomasBR.
 O fluxo integra:
 
 - Pré-processamento e cálculo de índices espectrais (MNDWI, SAVI, NDWI)
