@@ -2,7 +2,7 @@
 
 ## Descrição do Projeto
 
-Este repositório contém um script automatizado em **R** para mapeamento de recursos hídricos (água) na ecorregião do **Planalto Central**, usando imagens **Sentinel-2** e o pacote **SITS** (Satellite Image Time Series). 
+Este repositório contém um script automatizado em **R** para mapeamento de recursos hídricos na ecorregião do **Planalto Central**, no bioma Cerrado, usando imagens **Sentinel-2** e o pacote **SITS** (Satellite Image Time Series). 
 O fluxo integra:
 
 - Pré-processamento e cálculo de índices espectrais (MNDWI, SAVI, NDWI)
@@ -17,7 +17,7 @@ O fluxo integra:
 
 ## Área de Estudo
 
-- **Ecorregião:** Planalto Central (Cerrado brasileiro)
+- **Ecorregião:** Planalto Central 
 - **Período de análise:** Maio a Agosto (seco)
 - **Anos:** 2022 e 2024
 - **Satélite:** Sentinel-2 (16 dias de composição)
