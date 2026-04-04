@@ -2,7 +2,7 @@
 
 ## Descrição do Projeto
 
-Este repositório contém um pipeline automatizado em **R** para mapeamento de recursos hídricos (água) na ecorregião do **Planalto Central**, usando imagens **Sentinel-2** e o pacote **SITS** (Satellite Image Time Series). 
+Este repositório contém um script automatizado em **R** para mapeamento de recursos hídricos (água) na ecorregião do **Planalto Central**, usando imagens **Sentinel-2** e o pacote **SITS** (Satellite Image Time Series). 
 O fluxo integra:
 
 - Pré-processamento e cálculo de índices espectrais (MNDWI, SAVI, NDWI)
